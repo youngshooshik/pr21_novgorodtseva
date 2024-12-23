@@ -14,28 +14,47 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.example.pr21_novgorodtseva.ui.theme.Pr21_novgorodtsevaTheme
 
 class userActivity : ComponentActivity() {
+    private lateinit var sqlHelper: DatabaseHelper
+    private var userId: Long = 0
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        sqlHelper = DatabaseHelper(this)
+        userId = intent.getLongExtra("userId", 0)
+
         setContent {
-            Pr21_novgorodtsevaTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.background
-                    )
-                }
-            }
+            UserForm(
+                userId = userId,
+                databaseHelper = sqlHelper,
+                onSave = { finish() },
+                onDelete = { finish() }
+            )
         }
     }
 }
 
 @Composable
-fun MainScreen() {
-    val context = LocalContext.current
-    val dbHelper = remember { DatabaseHelper(context) }
-    var users by remember { mutableStateOf(dbHelper.getAllUsers()) }
+fun UserForm(
+    userId: Long,
+    databaseHelper: DatabaseHelper,
+    onSave: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var year by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf("") }
+
+    LaunchedEffect(userId) {
+        if (userId > 0) {
+            val cursor = databaseHelper.getUserById(userId)
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    name = it.getString(it.getColumnIndexOrThrow(DatabaseHelper.COLUMN_NAME))
+                    year = it.getInt(it.getColumnIndexOrThrow(DatabaseHelper.COLUMN_YEAR)).toString()
+                }
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -44,35 +63,56 @@ fun MainScreen() {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Button(onClick = {
-            val intent = Intent(context, UserActivity::class.java)
-            intent.putExtra("userId", 0L)
-            context.startActivity(intent)
-        }) {
-            Text("Добавить пользователя")
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Имя") }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = year,
+            onValueChange = { year = it },
+            label = { Text("Год рождения") },
+            isError = errorMessage.isNotEmpty()
+        )
+        if (errorMessage.isNotEmpty()) {
+            Text(text = errorMessage, color = MaterialTheme.colorScheme.error)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        users.forEach { user ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Имя: ${user.second.first}, Год: ${user.second.second}",
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(onClick = {
-                    dbHelper.deleteUser(user.first)
-
-                    users = dbHelper.getAllUsers()
-                }) {
-                    Text("Удалить")
+        Button(onClick = {
+            val yearInt = year.toIntOrNull()
+            if (yearInt != null) {
+                if (userId > 0) {
+                    databaseHelper.updateUser(userId, name, yearInt)
+                } else {
+                    databaseHelper.insertUser(name, yearInt)
                 }
+                onSave()
+            } else {
+                errorMessage = "Пожалуйста, введите корректный год."
             }
+        }) {
+            Text("Сохранить")
+        }
+
+        if (userId > 0) {
             Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = {
+                databaseHelper.deleteUser(userId)
+                onDelete()
+            }) {
+                Text("Удалить")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(onClick = { onSave() }) {
+            Text("Назад")
         }
     }
 }
